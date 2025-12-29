@@ -6,14 +6,15 @@ from datetime import datetime
 import pytz
 
 # إعدادات الصفحة
-st.set_page_config(page_title="SMC Sniper Elite v5", layout="wide")
+st.set_page_config(page_title="SMC Sniper Elite v6", layout="wide")
 
-# تصميم الواجهة
+# تصميم الواجهة الاحترافي
 st.markdown("""
     <style>
     .main { background-color: #0e1117; color: white; }
     div[data-testid="stTable"] { font-size: 13px !important; }
     .stMetric { background-color: #1c2128; border: 1px solid #30363d; border-radius: 10px; padding: 10px; }
+    .stSidebar { background-color: #161b22; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,7 +28,7 @@ def get_market_session():
 
 def fetch_data():
     try:
-        eur = yf.Ticker("EURUSD=X").history(period="2d", interval="5m") # استخدام 5 دقائق لرصد OB أدق
+        eur = yf.Ticker("EURUSD=X").history(period="2d", interval="5m")
         dxy = yf.Ticker("DX-Y.NYB").history(period="2d", interval="5m")
         return eur, dxy
     except:
@@ -35,63 +36,69 @@ def fetch_data():
 
 df, dxy_df = fetch_data()
 
+# --- القائمة الجانبية (الأخبار الاقتصادية) ---
+st.sidebar.title("📰 رادار الأخبار الهامة")
+st.sidebar.warning("⚠️ انتظار تقرير التضخم الأمريكي (CPI)")
+st.sidebar.info("🇪🇺 خطاب رئيس البنك المركزي الأوروبي")
+st.sidebar.markdown("---")
+st.sidebar.write("💡 نصيحة اليوم: تجنب التداول قبل الخبر بـ 30 دقيقة.")
+
 if not df.empty:
-    # حساب المؤشرات
+    # حسابات فنية
     df['RSI'] = ta.rsi(df['Close'], length=14)
     curr_rsi = round(df['RSI'].iloc[-1], 2)
     low_v = df['Low'].min()
     high_v = df['High'].max()
     price = df['Close'].iloc[-1]
     
-    # تحديد Order Block بسيط (آخر شمعة هابطة قبل صعود قوي)
-    # ملاحظة: برمجياً نأخذ نطاق سعري حول القاع/القمة لتمثيل الـ Block
-    buy_ob_range = f"{round(low_v, 5)} - {round(low_v + 0.00015, 5)}"
-    sell_ob_range = f"{round(high_v - 0.00015, 5)} - {round(high_v, 5)}"
+    # تحديد نطاق الأوردر بلوك
+    buy_ob = f"{round(low_v, 5)} - {round(low_v + 0.00012, 5)}"
+    sell_ob = f"{round(high_v - 0.00012, 5)} - {round(high_v, 5)}"
     
     session_n, session_weight = get_market_session()
     
-    # خوارزمية نسبة التأكيد المطورة (SMC + RSI + Session)
+    # خوارزمية التأكيد
     def calc_conf(side, rsi, session_w):
-        score = session_w * 0.35  # الجلسة 35%
+        score = session_w * 0.35
         if side == "BUY":
             if rsi < 30: score += 45
-            elif rsi < 45: score += 25
+            elif rsi < 45: score += 20
         else:
             if rsi > 70: score += 45
-            elif rsi > 55: score += 25
-        score += 20 # وزن الـ Order Block وتواجد السعر عنده
+            elif rsi > 55: score += 20
+        score += 20 
         return min(int(score), 99)
 
-    buy_conf = calc_conf("BUY", curr_rsi, session_weight)
-    sell_conf = calc_conf("SELL", curr_rsi, session_weight)
+    b_conf = calc_conf("BUY", curr_rsi, session_weight)
+    s_conf = calc_conf("SELL", curr_rsi, session_weight)
 
+    # حساب SL و TP
     sl_p, tp_p = 12, 45
     b_sl, b_tp = round(low_v - (sl_p/10000), 5), round(low_v + (tp_p/10000), 5)
     s_sl, s_tp = round(high_v + (sl_p/10000), 5), round(high_v - (tp_p/10000), 5)
 
-    st.markdown("<h2 style='text-align: center; color: #00FFCC;'>💎 رادار النخبة - SMC & Order Block</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #00FFCC;'>💎 رادار النخبة المتكامل</h2>", unsafe_allow_html=True)
     
+    # عرض المؤشرات
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("السعر الحالي", round(price, 5))
-    m2.metric("توقيت السوق", session_n)
+    m2.metric("الجلسة الحالية", session_n)
     m3.metric("زخم RSI", f"{curr_rsi}%")
-    m4.metric("قوة الدولار DXY", round(dxy_df['Close'].iloc[-1], 3) if not dxy_df.empty else "N/A")
+    m4.metric("DXY مؤشر الدولار", round(dxy_df['Close'].iloc[-1], 3) if not dxy_df.empty else "N/A")
 
+    # جدول التوصيات الشامل
     trade_list = {
-        "الفرصة": ["SMC BUY 🟢", "SMC SELL 🔴"],
-        "منطقة الـ Order Block": [buy_ob_range, sell_ob_range],
+        "الفرصة": ["BUY 🟢", "SELL 🔴"],
+        "منطقة Order Block": [buy_ob, sell_ob],
         "الستوب SL": [f"{b_sl} ({sl_p}P)", f"{s_sl} ({sl_p}P)"],
         "الهدف TP": [f"{b_tp} ({tp_p}P)", f"{s_tp} ({tp_p}P)"],
-        "التأكيد": [f"{buy_conf}% 🔥" if buy_conf > 75 else f"{buy_conf}%", 
-                    f"{sell_conf}% 🔥" if sell_conf > 75 else f"{sell_conf}%"],
-        "نصيحة الذكاء": ["شراء من OB القاع", "بيع من OB القمة"]
+        "نسبة التأكيد": [f"{b_conf}%", f"{s_conf}%"],
+        "الحالة": ["قوية ✅" if b_conf > 75 else "انتظار ⏳", "مراقبة 👀"]
     }
     st.table(pd.DataFrame(trade_list))
     
-    st.sidebar.title("🔍 تحليل السيولة")
-    st.sidebar.success("تم تفعيل كاشف الـ Order Block ✅")
-    st.sidebar.write(f"أدنى سعر اليوم: {round(low_v, 5)}")
-    st.sidebar.write(f"أعلى سعر اليوم: {round(high_v, 5)}")
+    # توضيح الأوردر بلوك
+    st.info(f"📍 تم تحديد مناطق السيولة بناءً على أعلى وأقل سعر خلال الـ 24 ساعة الماضية.")
 else:
-    st.write("جاري تحليل مناطق السيولة...")
+    st.error("فشل في الاتصال بمزود البيانات، يرجى إعادة المحاولة.")
     
